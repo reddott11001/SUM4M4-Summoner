@@ -1,0 +1,9 @@
+# Build directories
+build/
+*.spec
+__pycache__/
+
+# Counter file (we don't want to push your personal count to GitHub)
+neon_url_opener_count.txt
+
+# (Note: dist/ is NOT ignored here because you explicitly requested the .exe to be pushed)
