@@ -4,6 +4,7 @@ import sys
 import threading
 import time
 import webbrowser
+import random
 
 import customtkinter as ctk
 import pyautogui
@@ -55,10 +56,10 @@ def parse_amount(val):
         return 1
 
 
-def parse_time(val):
+def parse_single_time(val):
     val = val.strip().lower()
     if not val:
-        return 2.0  # default 2 seconds if left blank
+        return 2.0
     try:
         if val.endswith("m"):
             return float(val[:-1]) * 60.0
@@ -67,6 +68,22 @@ def parse_time(val):
         return float(val)
     except ValueError:
         return 2.0
+
+
+def parse_time(val):
+    val = val.strip().lower()
+    if not val:
+        return ("fixed", 2.0)  # default 2 seconds if left blank
+        
+    match = re.match(r"^random\s*\(\s*([^\,]+)\s*,\s*([^\)]+)\s*\)$", val)
+    if match:
+        min_val = parse_single_time(match.group(1))
+        max_val = parse_single_time(match.group(2))
+        if min_val > max_val:
+            min_val, max_val = max_val, min_val
+        return ("random", min_val, max_val)
+
+    return ("fixed", parse_single_time(val))
 
 
 # Reset counter to 0 on application startup
@@ -101,7 +118,7 @@ def open_url(event=None):
     amount = parse_amount(amount_str)
 
     timer_str = timer_entry.get().strip()
-    delay = parse_time(timer_str)
+    delay_config = parse_time(timer_str)
 
     if url:
         # Check if URL starts with http:// or https://
@@ -115,7 +132,7 @@ def open_url(event=None):
 
         # Start a background thread so the GUI doesn't freeze
         threading.Thread(
-            target=process_loop, args=(url, amount, delay), daemon=True
+            target=process_loop, args=(url, amount, delay_config), daemon=True
         ).start()
 
 
@@ -132,7 +149,7 @@ def toggle_pause():
         open_btn.configure(text="RESUMING...")
 
 
-def process_loop(url, amount, delay):
+def process_loop(url, amount, delay_config):
     global total_opened, is_processing, is_paused
 
     for i in range(amount):
@@ -148,6 +165,11 @@ def process_loop(url, amount, delay):
 
         # If opening multiple tabs, wait 'delay' seconds for page to load/stay open, then send 'ctrl+w'
         if amount > 1:
+            if delay_config[0] == "random":
+                delay = random.uniform(delay_config[1], delay_config[2])
+            else:
+                delay = delay_config[1]
+
             # We break the sleep into small chunks so we can interrupt it if user clicks STOP
             sleep_time = delay
             while sleep_time > 0 and is_processing:
@@ -312,7 +334,7 @@ amount_entry.pack(pady=(0, 10), padx=30)
 # Timer Input Entry
 timer_entry = ctk.CTkEntry(
     frame,
-    placeholder_text="Time per tab (e.g. 60s, 1m)...",
+    placeholder_text="Time (e.g. 60s, random(1,5))...",
     width=250,
     height=35,
     font=ctk.CTkFont(family="Consolas", size=13),
