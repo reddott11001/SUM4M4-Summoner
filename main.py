@@ -74,6 +74,7 @@ total_opened = 0
 save_count(0)
 
 is_processing = False
+is_paused = False
 
 # Configure appearance
 ctk.set_appearance_mode("dark")
@@ -81,11 +82,13 @@ ctk.set_default_color_theme("dark-blue")
 
 
 def open_url(event=None):
-    global is_processing, total_opened
+    global is_processing, total_opened, is_paused
     if is_processing:
         # If they click while processing, we stop it!
         is_processing = False
+        is_paused = False
         open_btn.configure(text="STOPPING...", state="disabled")
+        pause_btn.configure(state="disabled", text="PAUSE")
 
         # Reset the web count when stopped
         total_opened = 0
@@ -106,7 +109,9 @@ def open_url(event=None):
             url = "https://" + url
 
         is_processing = True
+        is_paused = False
         open_btn.configure(text="STOP PROCESSING (Click to abort)")
+        pause_btn.configure(state="normal", text="PAUSE")
 
         # Start a background thread so the GUI doesn't freeze
         threading.Thread(
@@ -114,10 +119,26 @@ def open_url(event=None):
         ).start()
 
 
+def toggle_pause():
+    global is_paused, is_processing
+    if not is_processing:
+        return
+    is_paused = not is_paused
+    if is_paused:
+        pause_btn.configure(text="RESUME", text_color="#00FF00", border_color="#00FF00")
+        open_btn.configure(text="PAUSED (Click to stop)")
+    else:
+        pause_btn.configure(text="PAUSE", text_color=NEON_RED, border_color=NEON_RED)
+        open_btn.configure(text="RESUMING...")
+
+
 def process_loop(url, amount, delay):
-    global total_opened, is_processing
+    global total_opened, is_processing, is_paused
 
     for i in range(amount):
+        while is_paused and is_processing:
+            time.sleep(0.5)
+
         if not is_processing:  # User cancelled
             break
 
@@ -130,6 +151,9 @@ def process_loop(url, amount, delay):
             # We break the sleep into small chunks so we can interrupt it if user clicks STOP
             sleep_time = delay
             while sleep_time > 0 and is_processing:
+                if is_paused:
+                    time.sleep(0.5)
+                    continue
                 time.sleep(min(0.5, sleep_time))
                 sleep_time -= 0.5
 
@@ -156,12 +180,14 @@ def process_loop(url, amount, delay):
                 0,
                 lambda current=i + 1: open_btn.configure(
                     text=f"PROCESSING... {current}/{amount}"
-                ),
+                ) if not is_paused else None,
             )
 
     # Cleanup when done
     is_processing = False
+    is_paused = False
     app.after(0, lambda: open_btn.configure(state="normal", text="OPEN IN NEW TAB"))
+    app.after(0, lambda: pause_btn.configure(state="disabled", text="PAUSE", text_color=NEON_RED, border_color=NEON_RED))
 
     # Bring app back to the front
     app.after(100, bring_to_front)
@@ -300,13 +326,17 @@ timer_entry = ctk.CTkEntry(
 timer_entry.pack(pady=(0, 15), padx=30)
 timer_entry.bind("<Return>", open_url)
 
+# Button Frame
+btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+btn_frame.pack(pady=(0, 15), padx=30)
+
 # Open Button
 open_btn = ctk.CTkButton(
-    frame,
+    btn_frame,
     text="OPEN IN NEW TAB",
-    width=200,
+    width=140,
     height=35,
-    font=ctk.CTkFont(family="Consolas", size=13, weight="bold"),
+    font=ctk.CTkFont(family="Consolas", size=12, weight="bold"),
     fg_color=BG_COLOR,
     text_color=NEON_RED,
     hover_color=NEON_RED,
@@ -315,7 +345,25 @@ open_btn = ctk.CTkButton(
     corner_radius=8,
     command=open_url,
 )
-open_btn.pack(pady=(0, 15), padx=30)
+open_btn.pack(side="left", padx=(0, 5))
+
+# Pause Button
+pause_btn = ctk.CTkButton(
+    btn_frame,
+    text="PAUSE",
+    width=60,
+    height=35,
+    font=ctk.CTkFont(family="Consolas", size=12, weight="bold"),
+    fg_color=BG_COLOR,
+    text_color=NEON_RED,
+    hover_color=NEON_RED,
+    border_color=NEON_RED,
+    border_width=2,
+    corner_radius=8,
+    command=toggle_pause,
+    state="disabled"
+)
+pause_btn.pack(side="left", padx=(5, 0))
 
 # Count Label
 count_label = ctk.CTkLabel(
@@ -328,25 +376,36 @@ count_label.pack(pady=(0, 15))
 
 
 # Add hover effect for neon glow inversion
-def on_enter(e):
+def on_enter_open(e):
     if not is_processing:
         open_btn.configure(text_color="#000000")
 
-
-def on_leave(e):
+def on_leave_open(e):
     open_btn.configure(text_color=NEON_RED)
 
+def on_enter_pause(e):
+    if pause_btn._state != "disabled":
+        pause_btn.configure(text_color="#000000")
 
-open_btn.bind("<Enter>", on_enter)
-open_btn.bind("<Leave>", on_leave)
+def on_leave_pause(e):
+    if is_paused:
+        pause_btn.configure(text_color="#00FF00")
+    else:
+        pause_btn.configure(text_color=NEON_RED)
+
+open_btn.bind("<Enter>", on_enter_open)
+open_btn.bind("<Leave>", on_leave_open)
+pause_btn.bind("<Enter>", on_enter_pause)
+pause_btn.bind("<Leave>", on_leave_pause)
 
 # Copyright Label
 copyright_label = ctk.CTkLabel(
     parent_container,
-    text="copyright Reddott11001",
+    text="© Reddott11001",
     font=ctk.CTkFont(family="Consolas", size=10, weight="bold"),
     text_color="#666666",
-    bg_color="transparent",
+    fg_color="transparent",
+    bg_color="transparent"
 )
 copyright_label.place(relx=0.96, rely=0.98, anchor="se")
 
