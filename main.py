@@ -5,6 +5,8 @@ import threading
 import time
 import webbrowser
 import random
+import subprocess
+import shutil
 
 import customtkinter as ctk
 import pyautogui
@@ -86,6 +88,52 @@ def parse_time(val):
     return ("fixed", parse_single_time(val))
 
 
+# Browser Config
+BROWSERS = {
+    "Google Chrome": {
+        "paths": [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe")
+        ],
+        "flag": "--guest"
+    },
+    "Microsoft Edge": {
+        "paths": [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+        ],
+        "flag": "--inprivate"
+    },
+    "Mozilla Firefox": {
+        "paths": [
+            r"C:\Program Files\Mozilla Firefox\firefox.exe",
+            r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe"
+        ],
+        "flag": "--private-window"
+    },
+    "Brave Browser": {
+        "paths": [
+            r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+            r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe"
+        ],
+        "flag": "--incognito"
+    }
+}
+
+def get_browser_exe(browser_name):
+    if browser_name not in BROWSERS:
+        return None
+    for path in BROWSERS[browser_name]["paths"]:
+        if os.path.exists(path):
+            return path
+    # Fallback to system PATH
+    exe_name = {"Google Chrome": "chrome", "Microsoft Edge": "msedge", "Mozilla Firefox": "firefox", "Brave Browser": "brave"}.get(browser_name)
+    if exe_name:
+        return shutil.which(exe_name)
+    return None
+
+
 # Reset counter to 0 on application startup
 total_opened = 0
 save_count(0)
@@ -120,6 +168,19 @@ def open_url(event=None):
     timer_str = timer_entry.get().strip()
     delay_config = parse_time(timer_str)
 
+    selected_browser = browser_var.get()
+    browser_exe = None
+    browser_flag = None
+
+    if selected_browser != "Default Browser":
+        browser_exe = get_browser_exe(selected_browser)
+        if not browser_exe:
+            open_btn.configure(text="COULDN'T FIND BROWSER")
+            app.after(2000, lambda: open_btn.configure(text="OPEN IN NEW TAB"))
+            is_processing = False
+            return
+        browser_flag = BROWSERS[selected_browser]["flag"]
+
     if url:
         # Check if URL starts with http:// or https://
         if not re.match(r"^https?://", url):
@@ -132,7 +193,7 @@ def open_url(event=None):
 
         # Start a background thread so the GUI doesn't freeze
         threading.Thread(
-            target=process_loop, args=(url, amount, delay_config), daemon=True
+            target=process_loop, args=(url, amount, delay_config, browser_exe, browser_flag), daemon=True
         ).start()
 
 
@@ -149,7 +210,7 @@ def toggle_pause():
         open_btn.configure(text="RESUMING...")
 
 
-def process_loop(url, amount, delay_config):
+def process_loop(url, amount, delay_config, browser_exe, browser_flag):
     global total_opened, is_processing, is_paused
 
     for i in range(amount):
@@ -159,9 +220,14 @@ def process_loop(url, amount, delay_config):
         if not is_processing:  # User cancelled
             break
 
-        # Open in default web browser. If amount > 1, we must let browser get focus for ctrl+w to work
-        autoraise_val = True if amount > 1 else False
-        webbrowser.open(url, new=2, autoraise=autoraise_val)
+        # Open in browser
+        if browser_exe:
+            # Open specific browser with incognito/guest flag
+            subprocess.Popen([browser_exe, browser_flag, url])
+        else:
+            # Fallback to default browser
+            autoraise_val = True if amount > 1 else False
+            webbrowser.open(url, new=2, autoraise=autoraise_val)
 
         # If opening multiple tabs, wait 'delay' seconds for page to load/stay open, then send 'ctrl+w'
         if amount > 1:
@@ -255,7 +321,7 @@ if os.path.exists(bg_path):
     bg_label.place(x=0, y=0, relwidth=1, relheight=1)
     parent_container = bg_label
 else:
-    app.geometry("300x450")  # Default size yang sudah dikecilkan
+    app.geometry("300x520")  # Default size yang sudah dikecilkan
     parent_container = app
 
 
@@ -347,6 +413,25 @@ timer_entry = ctk.CTkEntry(
 )
 timer_entry.pack(pady=(0, 15), padx=30)
 timer_entry.bind("<Return>", open_url)
+
+# Browser Selection Menu
+browser_var = ctk.StringVar(value="Default Browser")
+browser_menu = ctk.CTkOptionMenu(
+    frame,
+    values=["Default Browser", "Google Chrome", "Microsoft Edge", "Mozilla Firefox", "Brave Browser"],
+    variable=browser_var,
+    width=250,
+    height=35,
+    font=ctk.CTkFont(family="Consolas", size=13),
+    fg_color=BG_COLOR,
+    button_color=FRAME_BG,
+    button_hover_color=NEON_RED,
+    dropdown_fg_color=BG_COLOR,
+    dropdown_hover_color=FRAME_BG,
+    dropdown_text_color=TEXT_COLOR,
+    text_color=TEXT_COLOR
+)
+browser_menu.pack(pady=(0, 15), padx=30)
 
 # Button Frame
 btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
